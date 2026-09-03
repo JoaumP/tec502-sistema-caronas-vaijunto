@@ -53,14 +53,3 @@ type Reserva struct {
 
 	CriadoEm time.Time `json:"criado_em"`
 }
-
-// TrechoEntrada: usada só no momento de publicar a carona, não é salva.
-// O motorista informa duracao/espera; o servidor calcula os horarios do Trecho.
-type TrechoEntrada struct {
-	Origem         string `json:"origem"`
-	Destino        string `json:"destino"`
-	DuracaoMinutos int    `json:"duracao_minutos"`
-	EsperaMinutos  int    `json:"espera_minutos"` // opcional, padrão 0
-	PrecoCentavos  int    `json:"preco_centavos"`
-	AssentosTotais int    `json:"assentos_totais"`
-}
