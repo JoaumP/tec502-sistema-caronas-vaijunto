@@ -10,7 +10,6 @@ type Usuario struct {
 }
 
 // Trecho: menor unidade de viagem, entre duas cidades.
-// Horarios ja vem calculados pelo servidor a partir da entrada do motorista.
 type Trecho struct {
 	ID       int64 `json:"id"`
 	IDCarona int64 `json:"id_carona"`
@@ -18,13 +17,34 @@ type Trecho struct {
 	Origem  string `json:"origem"`
 	Destino string `json:"destino"`
 
-	HorarioSaida   string `json:"horario_saida"`   // formato "2006-01-02T15:04"
-	HorarioChegada string `json:"horario_chegada"` // formato "2006-01-02T15:04"
+	HorarioSaida   string `json:"horario_saida"`
+	HorarioChegada string `json:"horario_chegada"`
 
 	PrecoCentavos int `json:"preco_centavos"`
 
 	AssentosTotais int `json:"assentos_totais"`
-	AssentosLivres int `json:"assentos_livres"` // protegido por mutex no servidor
+	AssentosLivres int `json:"assentos_livres"`
+
+	mu sync.Mutex `json:"-"` // protege AssentosLivres; json:"-" evita tentar serializar o mutex
+
+	// TentarReservar tenta ocupar 1 assento. Retorna false se não há vaga.
+	func (t *Trecho) TentarReservar() bool {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if t.AssentosLivres <= 0 {
+			return false
+		}
+		t.AssentosLivres--
+		return true
+	}
+
+	// Liberar devolve 1 assento (usado se a reserva atômica falhar em outro trecho)
+	func (t *Trecho) Liberar() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.AssentosLivres++
+	}
+
 }
 
 // Carona: viagem anunciada pelo motorista, com sua rota de trechos.
