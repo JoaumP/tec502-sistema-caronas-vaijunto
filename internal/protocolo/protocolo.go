@@ -92,6 +92,38 @@ type RespostaBuscarItinerario struct {
 	Itinerarios []ItinerarioEncontrado `json:"itinerarios"`
 }
 
+
+type CaronaDetalhada struct {
+	ID           int64             `json:"id"`
+	Data         string            `json:"data"`
+	HorarioSaida string            `json:"horario_saida"`
+	Status       string            `json:"status"`
+	Trechos      []TrechoDetalhado `json:"trechos"`
+}
+
+type TrechoDetalhado struct {
+	ID             int64   `json:"id"`
+	Origem         string  `json:"origem"`
+	Destino        string  `json:"destino"`
+	AssentosTotais int     `json:"assentos_totais"`
+	AssentosLivres int     `json:"assentos_livres"`
+	Passageiros    []int64 `json:"passageiros"` // IDs dos passageiros confirmados nesse trecho
+}
+
+type RespostaConsultarCaronas struct {
+	Caronas []CaronaDetalhada `json:"caronas"`
+}
+
+type ReservaDetalhada struct {
+	ID         int64   `json:"id"`
+	Itinerario []int64 `json:"itinerario"`
+	Status     string  `json:"status"`
+}
+
+type RespostaConsultarReservas struct {
+	Reservas []ReservaDetalhada `json:"reservas"`
+}
+
 // ItinerarioEncontrado: uma opção de viagem, com o preço já somado
 type ItinerarioEncontrado struct {
 	Trechos       []int64 `json:"trechos"` // IDs, na ordem da viagem

@@ -17,6 +17,9 @@ type Estado struct {
 	trechosPorOrigemMu sync.RWMutex
 	trechosPorOrigem   map[string][]*modelos.Trecho // chave: cidade de origem
 
+	trechosPorIDMu sync.RWMutex
+	trechosPorID   map[int64]*modelos.Trecho // chave: ID do trecho
+
 	reservasMu sync.RWMutex
 	reservas   map[int64]*modelos.Reserva // chave: ID da reserva
 
@@ -32,6 +35,7 @@ func NovoEstado() *Estado {
 		usuarios:         make(map[string]*modelos.Usuario),
 		caronas:          make(map[int64]*modelos.Carona),
 		trechosPorOrigem: make(map[string][]*modelos.Trecho),
+		trechosPorID: 	  make(map[int64]*modelos.Trecho),
 		reservas:         make(map[int64]*modelos.Reserva),
 	}
 }
@@ -66,9 +70,13 @@ func (e *Estado) SalvarCarona(c *modelos.Carona) {
 	e.caronasMu.Unlock()
 
 	e.trechosPorOrigemMu.Lock()
+	e.trechosPorIDMu.Lock()
 	defer e.trechosPorOrigemMu.Unlock()
+	defer e.trechosPorIDMu.Unlock()
+
 	for _, t := range c.Trechos {
 		e.trechosPorOrigem[t.Origem] = append(e.trechosPorOrigem[t.Origem], t)
+		e.trechosPorID[t.ID] = t
 	}
 }
 
@@ -79,12 +87,58 @@ func (e *Estado) BuscarCarona(id int64) (*modelos.Carona, bool) {
 	return c, existe
 }
 
+func (e *Estado) TodasCaronas() []*modelos.Carona {
+	e.caronasMu.RLock()
+	defer e.caronasMu.RUnlock()
+
+	lista := make([]*modelos.Carona, 0, len(e.caronas))
+	for _, c := range e.caronas {
+		lista = append(lista, c)
+	}
+	return lista
+}
+
+func (e *Estado) TodasReservas() []*modelos.Reserva {
+	e.reservasMu.RLock()
+	defer e.reservasMu.RUnlock()
+
+	lista := make([]*modelos.Reserva, 0, len(e.reservas))
+	for _, r := range e.reservas {
+		lista = append(lista, r)
+	}
+	return lista
+}
+
 // Trechos (para busca de itinerário)
 
 func (e *Estado) TrechosSaindoDe(cidade string) []*modelos.Trecho {
 	e.trechosPorOrigemMu.RLock()
 	defer e.trechosPorOrigemMu.RUnlock()
 	return e.trechosPorOrigem[cidade]
+}
+
+func (e *Estado) BuscarTrecho(id int64) *modelos.Trecho {
+	e.trechosPorIDMu.RLock()
+	defer e.trechosPorIDMu.RUnlock()
+	return e.trechosPorID[id] // retorna nil se não existir
+}
+
+func (e *Estado) PassageirosDoTrecho(idTrecho int64) []int64 {
+	e.reservasMu.RLock()
+	defer e.reservasMu.RUnlock()
+
+	var passageiros []int64
+	for _, r := range e.reservas {
+		if r.Status != "confirmada" {
+			continue
+		}
+		for _, id := range r.Itinerario {
+			if id == idTrecho {
+				passageiros = append(passageiros, r.PassageiroID)
+			}
+		}
+	}
+	return passageiros
 }
 
 // Reservas

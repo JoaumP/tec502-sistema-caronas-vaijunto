@@ -1,6 +1,9 @@
 package modelos
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Usuario: quem usa o sistema (motorista ou passageiro)
 type Usuario struct {
@@ -26,25 +29,24 @@ type Trecho struct {
 	AssentosLivres int `json:"assentos_livres"`
 
 	mu sync.Mutex `json:"-"` // protege AssentosLivres; json:"-" evita tentar serializar o mutex
+}
 
-	// TentarReservar tenta ocupar 1 assento. Retorna false se não há vaga.
-	func (t *Trecho) TentarReservar() bool {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		if t.AssentosLivres <= 0 {
-			return false
-		}
-		t.AssentosLivres--
-		return true
+// TentarReservar tenta ocupar 1 assento. Retorna false se não há vaga.
+func (t *Trecho) TentarReservar() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.AssentosLivres <= 0 {
+		return false
 	}
+	t.AssentosLivres--
+	return true
+}
 
-	// Liberar devolve 1 assento (usado se a reserva atômica falhar em outro trecho)
-	func (t *Trecho) Liberar() {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		t.AssentosLivres++
-	}
-
+// Liberar devolve 1 assento (usado se a reserva atômica falhar em outro trecho)
+func (t *Trecho) Liberar() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.AssentosLivres++
 }
 
 // Carona: viagem anunciada pelo motorista, com sua rota de trechos.
@@ -54,6 +56,7 @@ type Carona struct {
 	ID          int64 `json:"id"`
 	MotoristaID int64 `json:"motorista_id"`
 
+	// Dados da viagem
 	Data         string `json:"data"`          // formato "2006-01-02"
 	HorarioSaida string `json:"horario_saida"` // formato "2006-01-02T15:04"
 
@@ -69,7 +72,7 @@ type Reserva struct {
 
 	Itinerario []int64 `json:"itinerario"` // IDs de Trecho, em ordem de viagem
 
-	Status string `json:"status"` // "pendente", "confirmada", "cancelada" ou "expirada"
+	Status string `json:"status"` // "confirmada", "cancelada"
 
 	CriadoEm time.Time `json:"criado_em"`
 }
