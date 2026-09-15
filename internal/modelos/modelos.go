@@ -20,7 +20,7 @@ type Trecho struct {
 	Origem  string `json:"origem"`
 	Destino string `json:"destino"`
 
-	HorarioSaida   string `json:"horario_saida"`
+	HorarioSaida   string `json:"horario_saida"`	// formato "AAAA-MM-DDTHH:mm", ex. "2024-06-15T14:30"
 	HorarioChegada string `json:"horario_chegada"`
 
 	PrecoCentavos int `json:"preco_centavos"`
@@ -55,13 +55,7 @@ func (t *Trecho) Liberar() {
 type Carona struct {
 	ID          int64 `json:"id"`
 	MotoristaID int64 `json:"motorista_id"`
-
-	// Dados da viagem
-	Data         string `json:"data"`          // formato "2006-01-02"
-	HorarioSaida string `json:"horario_saida"` // formato "2006-01-02T15:04"
-
 	Status string `json:"status"` // "ativa" ou "cancelada"
-
 	Trechos []*Trecho `json:"trechos"`
 }
 

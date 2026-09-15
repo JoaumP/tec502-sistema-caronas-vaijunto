@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/protocolo"
-	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/tcp"
+	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/auxiliares"
 )
+
 
 func main() {
 	conexao, err := net.Dial("tcp", "localhost:8080")
@@ -25,21 +25,30 @@ func main() {
 	escritor := bufio.NewWriter(conexao)
 	entrada := bufio.NewReader(os.Stdin)
 
-	fazerLogin(leitor, escritor, entrada)
+	for {
+		if !auxiliares.Autenticar(leitor, escritor, entrada) {
+			return
+		}
+		menuPrincipal(leitor, escritor, entrada)
+	}
+}
+
+func menuPrincipal(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
+	var ultimaBusca []protocolo.ItinerarioEncontrado // guarda a última busca feita
 
 	for {
 		fmt.Println("\n1. Buscar itinerário")
 		fmt.Println("2. Confirmar reserva")
-		fmt.Println("3. Sair")
+		fmt.Println("3. Sair da conta")
 		fmt.Print("> ")
 		opcao, _ := entrada.ReadString('\n')
 		opcao = strings.TrimSpace(opcao)
 
 		switch opcao {
 		case "1":
-			buscarItinerario(leitor, escritor, entrada)
+			ultimaBusca = buscarItinerario(leitor, escritor, entrada)
 		case "2":
-			confirmarReserva(leitor, escritor, entrada)
+			confirmarReserva(leitor, escritor, entrada, ultimaBusca)
 		case "3":
 			return
 		default:
@@ -48,50 +57,21 @@ func main() {
 	}
 }
 
-func fazerLogin(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	fmt.Print("Login: ")
-	login, _ := entrada.ReadString('\n')
-	login = strings.TrimSpace(login)
-
-	fmt.Print("Senha: ")
-	senha, _ := entrada.ReadString('\n')
-	senha = strings.TrimSpace(senha)
-
-	pedido := protocolo.PedidoLogin{Login: login, Senha: senha}
-	payload, _ := json.Marshal(pedido)
-	msg := protocolo.Mensagem{Operacao: protocolo.OpLogin, Payload: payload}
-
-	resposta := enviarEReceber(leitor, escritor, msg)
-
-	if !resposta.Sucesso {
-		fmt.Println("erro no login:", resposta.Erro)
-		os.Exit(1)
-	}
-	fmt.Println("login realizado com sucesso")
-}
-
-func buscarItinerario(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	fmt.Print("Origem: ")
-	origem, _ := entrada.ReadString('\n')
-	origem = strings.TrimSpace(origem)
-
-	fmt.Print("Destino: ")
-	destino, _ := entrada.ReadString('\n')
-	destino = strings.TrimSpace(destino)
-
-	fmt.Print("Data (2006-01-02): ")
-	data, _ := entrada.ReadString('\n')
-	data = strings.TrimSpace(data)
+func buscarItinerario(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) []protocolo.ItinerarioEncontrado {
+	origem := auxiliares.LerTexto(entrada, "Origem: ")
+	destino := auxiliares.LerTexto(entrada, "Destino: ")
+	dataTexto := auxiliares.LerData(entrada, "Data (DD/MM/AAAA): ")
+	data, _ := auxiliares.ConverterData(dataTexto)
 
 	pedido := protocolo.PedidoBuscarItinerario{Origem: origem, Destino: destino, Data: data}
 	payload, _ := json.Marshal(pedido)
 	msg := protocolo.Mensagem{Operacao: protocolo.OpBuscarItinerario, Payload: payload}
 
-	resposta := enviarEReceber(leitor, escritor, msg)
+	resposta := auxiliares.EnviarEReceber(leitor, escritor, msg)
 
 	if !resposta.Sucesso {
 		fmt.Println("erro:", resposta.Erro)
-		return
+		return nil
 	}
 
 	var r protocolo.RespostaBuscarItinerario
@@ -99,35 +79,35 @@ func buscarItinerario(leitor *bufio.Reader, escritor *bufio.Writer, entrada *buf
 
 	if len(r.Itinerarios) == 0 {
 		fmt.Println("nenhum itinerário encontrado")
-		return
+		return nil
 	}
 
 	for i, it := range r.Itinerarios {
-		fmt.Printf("%d) trechos: %v | preço: %d centavos\n", i+1, it.Trechos, it.PrecoCentavos)
+		fmt.Printf("%d) trechos: %v | preço: R$ %.2f\n", i+1, it.Trechos, float64(it.PrecoCentavos)/100)
 	}
+
+	return r.Itinerarios
 }
 
-func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	fmt.Print("IDs dos trechos, separados por vírgula: ")
-	linha, _ := entrada.ReadString('\n')
-	linha = strings.TrimSpace(linha)
-
-	partes := strings.Split(linha, ",")
-	var itinerario []int64
-	for _, p := range partes {
-		id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
-		if err != nil {
-			fmt.Println("ID inválido:", p)
-			return
-		}
-		itinerario = append(itinerario, id)
+func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader, ultimaBusca []protocolo.ItinerarioEncontrado) {
+	if len(ultimaBusca) == 0 {
+		fmt.Println("faça uma busca primeiro")
+		return
 	}
+
+	numero := auxiliares.LerInteiroPositivo(entrada, "Número da opção desejada: ")
+	if numero < 1 || numero > len(ultimaBusca) {
+		fmt.Println("opção inválida")
+		return
+	}
+
+	itinerario := ultimaBusca[numero-1].Trechos
 
 	pedido := protocolo.PedidoConfirmarReserva{Itinerario: itinerario}
 	payload, _ := json.Marshal(pedido)
 	msg := protocolo.Mensagem{Operacao: protocolo.OpConfirmarReserva, Payload: payload}
 
-	resposta := enviarEReceber(leitor, escritor, msg)
+	resposta := auxiliares.EnviarEReceber(leitor, escritor, msg)
 
 	if !resposta.Sucesso {
 		fmt.Println("erro:", resposta.Erro)
@@ -137,19 +117,4 @@ func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *buf
 	var r protocolo.RespostaConfirmarReserva
 	json.Unmarshal(resposta.Dados, &r)
 	fmt.Println("reserva confirmada, ID:", r.IDReserva)
-}
-
-func enviarEReceber(leitor *bufio.Reader, escritor *bufio.Writer, msg protocolo.Mensagem) protocolo.Resposta {
-	dados, _ := json.Marshal(msg)
-	tcp.EnviarMensagem(escritor, dados)
-
-	respostaBytes, err := tcp.LerMensagem(leitor)
-	if err != nil {
-		fmt.Println("erro ao ler resposta:", err)
-		os.Exit(1)
-	}
-
-	var resposta protocolo.Resposta
-	json.Unmarshal(respostaBytes, &resposta)
-	return resposta
 }

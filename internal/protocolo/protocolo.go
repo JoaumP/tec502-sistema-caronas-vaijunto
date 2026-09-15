@@ -19,6 +19,7 @@ type Resposta struct {
 
 // Lista de operações suportadas
 const (
+	OpCadastro          = "cadastro"
 	OpLogin             = "login"
 	OpPublicarCarona    = "publicar_carona"
 	OpCancelarCarona    = "cancelar_carona"
@@ -38,8 +39,6 @@ type PedidoLogin struct {
 
 // PedidoPublicarCarona: rota completa, motorista informa cada trecho já com horários
 type PedidoPublicarCarona struct {
-	Data         string           `json:"data"`
-	HorarioSaida string           `json:"horario_saida"`
 	Trechos      []TrechoPedido   `json:"trechos"`
 }
 
@@ -95,8 +94,6 @@ type RespostaBuscarItinerario struct {
 
 type CaronaDetalhada struct {
 	ID           int64             `json:"id"`
-	Data         string            `json:"data"`
-	HorarioSaida string            `json:"horario_saida"`
 	Status       string            `json:"status"`
 	Trechos      []TrechoDetalhado `json:"trechos"`
 }

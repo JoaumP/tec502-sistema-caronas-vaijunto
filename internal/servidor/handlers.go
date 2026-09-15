@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
+	"log"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -18,6 +19,32 @@ func respostaErro(msg string) protocolo.Resposta {
 }
 
 
+func (e *Estado) HandleCadastro(payload json.RawMessage) protocolo.Resposta {
+	var pedido protocolo.PedidoLogin
+	if err := json.Unmarshal(payload, &pedido); err != nil {
+		return respostaErro("payload inválido")
+	}
+
+	if _, existe := e.BuscarUsuario(pedido.Login); existe {
+		return respostaErro("login já cadastrado")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(pedido.Senha), bcrypt.DefaultCost)
+	if err != nil {
+		return respostaErro("erro ao processar senha")
+	}
+
+	usuario := &modelos.Usuario{
+		ID:        e.GerarIDUsuario(),
+		Login:     pedido.Login,
+		SenhaHash: string(hash),
+	}
+	e.SalvarUsuario(usuario)
+
+	dados, _ := json.Marshal(protocolo.RespostaLogin{IDUsuario: usuario.ID})
+	return protocolo.Resposta{Sucesso: true, Dados: dados}
+}
+
 func (e *Estado) HandleLogin(payload json.RawMessage) protocolo.Resposta {
 	var pedido protocolo.PedidoLogin
 	if err := json.Unmarshal(payload, &pedido); err != nil {
@@ -25,25 +52,12 @@ func (e *Estado) HandleLogin(payload json.RawMessage) protocolo.Resposta {
 	}
 
 	usuario, existe := e.BuscarUsuario(pedido.Login)
+	if !existe {
+		return respostaErro("login não encontrado")
+	}
 
-	if existe {
-		// usuário já existe: valida a senha
-		err := bcrypt.CompareHashAndPassword([]byte(usuario.SenhaHash), []byte(pedido.Senha))
-		if err != nil {
-			return respostaErro("senha incorreta")
-		}
-	} else {
-		// usuário novo: cadastra
-		hash, err := bcrypt.GenerateFromPassword([]byte(pedido.Senha), bcrypt.DefaultCost)
-		if err != nil {
-			return respostaErro("erro ao processar senha")
-		}
-		usuario = &modelos.Usuario{
-			ID:        e.GerarIDUsuario(),
-			Login:     pedido.Login,
-			SenhaHash: string(hash),
-		}
-		e.SalvarUsuario(usuario)
+	if err := bcrypt.CompareHashAndPassword([]byte(usuario.SenhaHash), []byte(pedido.Senha)); err != nil {
+		return respostaErro("senha incorreta")
 	}
 
 	dados, _ := json.Marshal(protocolo.RespostaLogin{IDUsuario: usuario.ID})
@@ -85,8 +99,6 @@ func (e *Estado) HandlePublicarCarona(idMotorista int64, payload json.RawMessage
 	carona := &modelos.Carona{
 		ID:           idCarona,
 		MotoristaID:  idMotorista,
-		Data:         pedido.Data,
-		HorarioSaida: pedido.HorarioSaida,
 		Status:       "ativa",
 		Trechos:      trechos,
 	}
@@ -102,6 +114,8 @@ func (e *Estado) HandleBuscarItinerario(payload json.RawMessage) protocolo.Respo
 	if err := json.Unmarshal(payload, &pedido); err != nil {
 		return respostaErro("payload inválido")
 	}
+
+	log.Printf("busca: origem=%q destino=%q data=%q\n", pedido.Origem, pedido.Destino, pedido.Data)
 
 	caminhos := e.buscarCaminhos(pedido.Origem, pedido.Destino, pedido.Data)
 
@@ -266,8 +280,6 @@ func (e *Estado) HandleConsultarCaronas(idMotorista int64) protocolo.Resposta {
 
 		resultado = append(resultado, protocolo.CaronaDetalhada{
 			ID:           c.ID,
-			Data:         c.Data,
-			HorarioSaida: c.HorarioSaida,
 			Status:       c.Status,
 			Trechos:      trechos,
 		})

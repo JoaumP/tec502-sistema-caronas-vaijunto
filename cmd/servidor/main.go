@@ -62,6 +62,13 @@ func atenderConexao(conexao net.Conn, estado *servidor.Estado) {
 				json.Unmarshal(resposta.Dados, &r)
 				idUsuarioLogado = r.IDUsuario
 			}
+		case protocolo.OpCadastro:
+			resposta = estado.HandleCadastro(msg.Payload)
+			if resposta.Sucesso {
+				var r protocolo.RespostaLogin
+				json.Unmarshal(resposta.Dados, &r)
+				idUsuarioLogado = r.IDUsuario
+			}
 		case protocolo.OpPublicarCarona:
 			resposta = estado.HandlePublicarCarona(idUsuarioLogado, msg.Payload)
 		case protocolo.OpBuscarItinerario:

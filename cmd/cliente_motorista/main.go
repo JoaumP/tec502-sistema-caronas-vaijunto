@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 
+	
+
 	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/protocolo"
-	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/tcp"
+	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/auxiliares"
 )
+
 
 func main() {
 	conexao, err := net.Dial("tcp", "localhost:8080")
@@ -25,11 +27,18 @@ func main() {
 	escritor := bufio.NewWriter(conexao)
 	entrada := bufio.NewReader(os.Stdin)
 
-	fazerLogin(leitor, escritor, entrada)
+	for {
+		if !auxiliares.Autenticar(leitor, escritor, entrada) {
+			return
+		}
+		menuPrincipal(leitor, escritor, entrada)
+	}
+}
 
+func menuPrincipal(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
 	for {
 		fmt.Println("\n1. Publicar carona")
-		fmt.Println("2. Sair")
+		fmt.Println("2. Sair da conta")
 		fmt.Print("> ")
 		opcao, _ := entrada.ReadString('\n')
 		opcao = strings.TrimSpace(opcao)
@@ -45,85 +54,47 @@ func main() {
 	}
 }
 
-func fazerLogin(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	fmt.Print("Login: ")
-	login, _ := entrada.ReadString('\n')
-	login = strings.TrimSpace(login)
-
-	fmt.Print("Senha: ")
-	senha, _ := entrada.ReadString('\n')
-	senha = strings.TrimSpace(senha)
-
-	pedido := protocolo.PedidoLogin{Login: login, Senha: senha}
-	payload, _ := json.Marshal(pedido)
-	msg := protocolo.Mensagem{Operacao: protocolo.OpLogin, Payload: payload}
-
-	resposta := enviarEReceber(leitor, escritor, msg)
-
-	if !resposta.Sucesso {
-		fmt.Println("erro no login:", resposta.Erro)
-		os.Exit(1)
-	}
-	fmt.Println("login realizado com sucesso")
-}
-
 func publicarCarona(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	fmt.Print("Data (2006-01-02): ")
-	data, _ := entrada.ReadString('\n')
-	data = strings.TrimSpace(data)
-
-	fmt.Print("Horário de saída (2006-01-02T15:04): ")
-	horarioSaida, _ := entrada.ReadString('\n')
-	horarioSaida = strings.TrimSpace(horarioSaida)
+	fmt.Println("Cadastre a rota, trecho por trecho.")
 
 	var trechos []protocolo.TrechoPedido
+	origemAtual := auxiliares.LerTexto(entrada, "Cidade de origem (partida da rota): ")
+
 	for {
-		fmt.Print("Origem (ou vazio para terminar): ")
-		origem, _ := entrada.ReadString('\n')
-		origem = strings.TrimSpace(origem)
-		if origem == "" {
-			break
+		destino := auxiliares.LerTexto(entrada, "Cidade de destino deste trecho: ")
+		data := auxiliares.LerData(entrada, "Data (DD/MM/AAAA): ")
+		horaSaida := auxiliares.LerHora(entrada, "Horário de saída (HH:MM): ")
+		horaChegada := auxiliares.LerHora(entrada, "Horário de chegada (HH:MM): ")
+
+		hSaida, hChegada, err := auxiliares.MontarHorarios(data, horaSaida, horaChegada)
+		if err != nil {
+			fmt.Println("erro ao montar horário:", err)
+			return
 		}
 
-		fmt.Print("Destino: ")
-		destino, _ := entrada.ReadString('\n')
-		destino = strings.TrimSpace(destino)
-
-		fmt.Print("Horário de saída do trecho: ")
-		hSaida, _ := entrada.ReadString('\n')
-		hSaida = strings.TrimSpace(hSaida)
-
-		fmt.Print("Horário de chegada do trecho: ")
-		hChegada, _ := entrada.ReadString('\n')
-		hChegada = strings.TrimSpace(hChegada)
-
-		fmt.Print("Preço (centavos): ")
-		precoStr, _ := entrada.ReadString('\n')
-		preco, _ := strconv.Atoi(strings.TrimSpace(precoStr))
-
-		fmt.Print("Assentos totais: ")
-		assentosStr, _ := entrada.ReadString('\n')
-		assentos, _ := strconv.Atoi(strings.TrimSpace(assentosStr))
+		preco := auxiliares.LerPrecoCentavos(entrada, "Preço (R$): ")
+		assentos := auxiliares.LerInteiroPositivo(entrada, "Assentos totais: ")
 
 		trechos = append(trechos, protocolo.TrechoPedido{
-			Origem:         origem,
+			Origem:         origemAtual,
 			Destino:        destino,
 			HorarioSaida:   hSaida,
 			HorarioChegada: hChegada,
 			PrecoCentavos:  preco,
 			AssentosTotais: assentos,
 		})
+
+		if !auxiliares.LerSimNao(entrada, "\nAdicionar outro trecho a partir de "+destino+"? (s/n): ") {
+			break
+		}
+		origemAtual = destino
 	}
 
-	pedido := protocolo.PedidoPublicarCarona{
-		Data:         data,
-		HorarioSaida: horarioSaida,
-		Trechos:      trechos,
-	}
+	pedido := protocolo.PedidoPublicarCarona{Trechos: trechos}
 	payload, _ := json.Marshal(pedido)
 	msg := protocolo.Mensagem{Operacao: protocolo.OpPublicarCarona, Payload: payload}
 
-	resposta := enviarEReceber(leitor, escritor, msg)
+	resposta := auxiliares.EnviarEReceber(leitor, escritor, msg)
 
 	if !resposta.Sucesso {
 		fmt.Println("erro:", resposta.Erro)
@@ -133,19 +104,4 @@ func publicarCarona(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio
 	var r protocolo.RespostaPublicarCarona
 	json.Unmarshal(resposta.Dados, &r)
 	fmt.Println("carona publicada, ID:", r.IDCarona)
-}
-
-func enviarEReceber(leitor *bufio.Reader, escritor *bufio.Writer, msg protocolo.Mensagem) protocolo.Resposta {
-	dados, _ := json.Marshal(msg)
-	tcp.EnviarMensagem(escritor, dados)
-
-	respostaBytes, err := tcp.LerMensagem(leitor)
-	if err != nil {
-		fmt.Println("erro ao ler resposta:", err)
-		os.Exit(1)
-	}
-
-	var resposta protocolo.Resposta
-	json.Unmarshal(respostaBytes, &resposta)
-	return resposta
 }
