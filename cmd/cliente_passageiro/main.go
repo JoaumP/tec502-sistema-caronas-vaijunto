@@ -34,13 +34,16 @@ func main() {
 }
 
 func menuPrincipal(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
-	var ultimaBusca []protocolo.ItinerarioEncontrado // guarda a última busca feita
+	var ultimaBusca []protocolo.ItinerarioEncontrado
 
 	for {
-		fmt.Println("\n1. Buscar itinerário")
-		fmt.Println("2. Confirmar reserva")
-		fmt.Println("3. Sair da conta")
-		fmt.Print("> ")
+		auxiliares.ImprimirMenu("Menu Passageiro", []string{
+			"Buscar itinerário",
+			"Confirmar reserva",
+			"Consultar minhas reservas",
+			"Cancelar reserva",
+			"Sair da conta",
+		})
 		opcao, _ := entrada.ReadString('\n')
 		opcao = strings.TrimSpace(opcao)
 
@@ -50,6 +53,10 @@ func menuPrincipal(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.
 		case "2":
 			confirmarReserva(leitor, escritor, entrada, ultimaBusca)
 		case "3":
+			consultarReservas(leitor, escritor, entrada)
+		case "4":
+			cancelarReserva(leitor, escritor, entrada)
+		case "5":
 			return
 		default:
 			fmt.Println("opção inválida")
@@ -82,12 +89,19 @@ func buscarItinerario(leitor *bufio.Reader, escritor *bufio.Writer, entrada *buf
 		return nil
 	}
 
+	fmt.Println()
 	for i, it := range r.Itinerarios {
-		fmt.Printf("%d) trechos: %v | preço: R$ %.2f\n", i+1, it.Trechos, float64(it.PrecoCentavos)/100)
+		auxiliares.ImprimirSeparador()
+		fmt.Printf("Opção %d — R$ %.2f — %d trecho(s)\n", i+1, float64(it.PrecoCentavos)/100, len(it.Trechos))
+		for _, t := range it.Trechos {
+			fmt.Printf("   %s (%s)  →  %s (%s)\n", t.Origem, auxiliares.FormatarHorario(t.HorarioSaida), t.Destino, auxiliares.FormatarHorario(t.HorarioChegada))
+		}
 	}
+	auxiliares.ImprimirSeparador()
 
 	return r.Itinerarios
 }
+
 
 func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader, ultimaBusca []protocolo.ItinerarioEncontrado) {
 	if len(ultimaBusca) == 0 {
@@ -101,9 +115,12 @@ func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *buf
 		return
 	}
 
-	itinerario := ultimaBusca[numero-1].Trechos
+	var idsTrecho []int64
+	for _, t := range ultimaBusca[numero-1].Trechos {
+		idsTrecho = append(idsTrecho, t.ID)
+	}
 
-	pedido := protocolo.PedidoConfirmarReserva{Itinerario: itinerario}
+	pedido := protocolo.PedidoConfirmarReserva{Itinerario: idsTrecho}
 	payload, _ := json.Marshal(pedido)
 	msg := protocolo.Mensagem{Operacao: protocolo.OpConfirmarReserva, Payload: payload}
 
@@ -117,4 +134,49 @@ func confirmarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *buf
 	var r protocolo.RespostaConfirmarReserva
 	json.Unmarshal(resposta.Dados, &r)
 	fmt.Println("reserva confirmada, ID:", r.IDReserva)
+}
+
+func consultarReservas(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
+	msg := protocolo.Mensagem{Operacao: protocolo.OpConsultarReservas}
+	resposta := auxiliares.EnviarEReceber(leitor, escritor, msg)
+
+	if !resposta.Sucesso {
+		fmt.Println("erro:", resposta.Erro)
+		return
+	}
+
+	var r protocolo.RespostaConsultarReservas
+	json.Unmarshal(resposta.Dados, &r)
+
+	if len(r.Reservas) == 0 {
+		fmt.Println("você ainda não tem nenhuma reserva")
+		return
+	}
+
+	fmt.Println()
+	for _, res := range r.Reservas {
+		auxiliares.ImprimirSeparador()
+		fmt.Printf("Reserva #%d — status: %s\n", res.ID, strings.ToUpper(res.Status))
+		for _, t := range res.Trechos {
+			fmt.Printf("   %s (%s)  →  %s (%s)\n", t.Origem, auxiliares.FormatarHorario(t.HorarioSaida), t.Destino, auxiliares.FormatarHorario(t.HorarioChegada))
+		}
+	}
+	auxiliares.ImprimirSeparador()
+}
+
+func cancelarReserva(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.Reader) {
+	id := auxiliares.LerInteiroPositivo(entrada, "ID da reserva a cancelar: ")
+
+	pedido := protocolo.PedidoCancelarReserva{IDReserva: int64(id)}
+	payload, _ := json.Marshal(pedido)
+	msg := protocolo.Mensagem{Operacao: protocolo.OpCancelarReserva, Payload: payload}
+
+	resposta := auxiliares.EnviarEReceber(leitor, escritor, msg)
+
+	if !resposta.Sucesso {
+		fmt.Println("erro:", resposta.Erro)
+		return
+	}
+
+	fmt.Println("reserva cancelada com sucesso")
 }

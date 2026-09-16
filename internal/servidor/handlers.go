@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
-	"log"
+	"errors"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -25,21 +25,15 @@ func (e *Estado) HandleCadastro(payload json.RawMessage) protocolo.Resposta {
 		return respostaErro("payload inválido")
 	}
 
-	if _, existe := e.BuscarUsuario(pedido.Login); existe {
-		return respostaErro("login já cadastrado")
-	}
-
 	hash, err := bcrypt.GenerateFromPassword([]byte(pedido.Senha), bcrypt.DefaultCost)
 	if err != nil {
 		return respostaErro("erro ao processar senha")
 	}
 
-	usuario := &modelos.Usuario{
-		ID:        e.GerarIDUsuario(),
-		Login:     pedido.Login,
-		SenhaHash: string(hash),
+	usuario, criado := e.CriarUsuario(pedido.Login, string(hash))
+	if !criado {
+		return respostaErro("login já cadastrado")
 	}
-	e.SalvarUsuario(usuario)
 
 	dados, _ := json.Marshal(protocolo.RespostaLogin{IDUsuario: usuario.ID})
 	return protocolo.Resposta{Sucesso: true, Dados: dados}
@@ -74,8 +68,8 @@ func (e *Estado) HandlePublicarCarona(idMotorista int64, payload json.RawMessage
 		return respostaErro("payload inválido")
 	}
 
-	if len(pedido.Trechos) == 0 {
-		return respostaErro("carona precisa de pelo menos um trecho")
+	if err := validarTrechos(pedido.Trechos); err != nil {
+		return respostaErro(err.Error())
 	}
 
 	idCarona := e.GerarIDCarona()
@@ -115,20 +109,25 @@ func (e *Estado) HandleBuscarItinerario(payload json.RawMessage) protocolo.Respo
 		return respostaErro("payload inválido")
 	}
 
-	log.Printf("busca: origem=%q destino=%q data=%q\n", pedido.Origem, pedido.Destino, pedido.Data)
-
 	caminhos := e.buscarCaminhos(pedido.Origem, pedido.Destino, pedido.Data)
 
 	var itinerarios []protocolo.ItinerarioEncontrado
 	for _, caminho := range caminhos {
-		var ids []int64
+		var trechos []protocolo.TrechoResumo
 		preco := 0
 		for _, t := range caminho {
-			ids = append(ids, t.ID)
+			trechos = append(trechos, protocolo.TrechoResumo{
+				ID:             t.ID,
+				Origem:         t.Origem,
+				Destino:        t.Destino,
+				HorarioSaida:   t.HorarioSaida,
+				HorarioChegada: t.HorarioChegada,
+				PrecoCentavos:  t.PrecoCentavos,
+			})
 			preco += t.PrecoCentavos
 		}
 		itinerarios = append(itinerarios, protocolo.ItinerarioEncontrado{
-			Trechos:       ids,
+			Trechos:       trechos,
 			PrecoCentavos: preco,
 		})
 	}
@@ -143,8 +142,8 @@ func (e *Estado) buscarCaminhos(origem, destino, data string) [][]*modelos.Trech
 	var caminhoAtual []*modelos.Trecho
 	visitadas := make(map[string]bool)
 
-	var dfs func(cidade string)
-	dfs = func(cidade string) {
+	var dfs func(cidade string, chegadaAnterior string)
+	dfs = func(cidade string, chegadaAnterior string) {
 		if cidade == destino {
 			copia := make([]*modelos.Trecho, len(caminhoAtual))
 			copy(copia, caminhoAtual)
@@ -153,26 +152,37 @@ func (e *Estado) buscarCaminhos(origem, destino, data string) [][]*modelos.Trech
 		}
 		visitadas[cidade] = true
 		for _, t := range e.TrechosSaindoDe(cidade) {
-			if t.HorarioSaida[:10] != data {
+			if len(t.HorarioSaida) < 10 {
 				continue
 			}
+
+			if chegadaAnterior == "" {
+				// primeiro trecho: precisa sair na data pedida
+				if t.HorarioSaida[:10] != data {
+					continue
+				}
+			} else if t.HorarioSaida < chegadaAnterior {
+				// trechos seguintes: só pode sair depois da chegada anterior
+				continue
+			}
+
 			if t.AssentosLivres <= 0 || visitadas[t.Destino] {
 				continue
 			}
 
 			carona, existe := e.BuscarCarona(t.IDCarona)
-			if !existe || carona.Status != "ativa" {
+			if !existe || !carona.EstaAtiva() {
 				continue
 			}
 
 			caminhoAtual = append(caminhoAtual, t)
-			dfs(t.Destino)
+			dfs(t.Destino, t.HorarioChegada)
 			caminhoAtual = caminhoAtual[:len(caminhoAtual)-1]
 		}
 		visitadas[cidade] = false
 	}
 
-	dfs(origem)
+	dfs(origem, "")
 	return resultados
 }
 
@@ -196,6 +206,10 @@ func (e *Estado) HandleConfirmarReserva(idPassageiro int64, payload json.RawMess
 		t := e.BuscarTrecho(idTrecho)
 		if t == nil {
 			return respostaErro("trecho não encontrado")
+		}
+		carona, existe := e.BuscarCarona(t.IDCarona)
+		if !existe || !carona.EstaAtiva() {
+			return respostaErro("um dos trechos pertence a uma carona cancelada")
 		}
 		trechos = append(trechos, t)
 	}
@@ -249,8 +263,12 @@ func (e *Estado) HandleCancelarCarona(idMotorista int64, payload json.RawMessage
 	if carona.MotoristaID != idMotorista {
 		return respostaErro("carona não pertence a este motorista")
 	}
+	if !carona.EstaAtiva() {
+		return respostaErro("carona já está cancelada")
+	}
 
-	carona.Status = "cancelada"
+	carona.Cancelar()
+	e.CancelarReservasDaCarona(carona)
 
 	return protocolo.Resposta{Sucesso: true}
 }
@@ -272,6 +290,8 @@ func (e *Estado) HandleConsultarCaronas(idMotorista int64) protocolo.Resposta {
 				ID:             t.ID,
 				Origem:         t.Origem,
 				Destino:        t.Destino,
+				HorarioSaida:   t.HorarioSaida,
+				HorarioChegada: t.HorarioChegada,
 				AssentosTotais: t.AssentosTotais,
 				AssentosLivres: t.AssentosLivres,
 				Passageiros:    e.PassageirosDoTrecho(t.ID),
@@ -316,7 +336,7 @@ func (e *Estado) HandleCancelarReserva(idPassageiro int64, payload json.RawMessa
 			t.Liberar()
 		}
 	}
-	reserva.Status = "cancelada"
+	reserva.Cancelar()
 
 	return protocolo.Resposta{Sucesso: true}
 }
@@ -331,10 +351,27 @@ func (e *Estado) HandleConsultarReservas(idPassageiro int64) protocolo.Resposta 
 		if r.PassageiroID != idPassageiro {
 			continue
 		}
+
+		var trechos []protocolo.TrechoResumo
+		for _, idTrecho := range r.Itinerario {
+			t := e.BuscarTrecho(idTrecho)
+			if t == nil {
+				continue
+			}
+			trechos = append(trechos, protocolo.TrechoResumo{
+				ID:             t.ID,
+				Origem:         t.Origem,
+				Destino:        t.Destino,
+				HorarioSaida:   t.HorarioSaida,
+				HorarioChegada: t.HorarioChegada,
+				PrecoCentavos:  t.PrecoCentavos,
+			})
+		}
+
 		resultado = append(resultado, protocolo.ReservaDetalhada{
-			ID:         r.ID,
-			Itinerario: r.Itinerario,
-			Status:     r.Status,
+			ID:      r.ID,
+			Trechos: trechos,
+			Status:  r.StatusAtual(),
 		})
 	}
 
@@ -342,3 +379,34 @@ func (e *Estado) HandleConsultarReservas(idPassageiro int64) protocolo.Resposta 
 	return protocolo.Resposta{Sucesso: true, Dados: dados}
 }
 
+
+
+func validarTrechos(trechos []protocolo.TrechoPedido) error {
+	if len(trechos) == 0 {
+		return errors.New("carona precisa de pelo menos um trecho")
+	}
+	for i, tp := range trechos {
+		if tp.Origem == "" || tp.Destino == "" {
+			return errors.New("origem e destino não podem ser vazios")
+		}
+		if len(tp.HorarioSaida) < 10 || len(tp.HorarioChegada) < 10 {
+			return errors.New("horário inválido")
+		}
+		if tp.HorarioChegada <= tp.HorarioSaida {
+			return errors.New("horário de chegada deve ser depois da saída")
+		}
+		if tp.AssentosTotais <= 0 {
+			return errors.New("assentos totais deve ser maior que zero")
+		}
+		if tp.PrecoCentavos < 0 {
+			return errors.New("preço não pode ser negativo")
+		}
+		if i > 0 && tp.Origem != trechos[i-1].Destino {
+			return errors.New("origem deve ser o destino do trecho anterior")
+		}
+		if i > 0 && tp.HorarioSaida < trechos[i-1].HorarioChegada {
+			return errors.New("um trecho não pode partir antes do anterior chegar")
+		}
+	}
+	return nil
+}

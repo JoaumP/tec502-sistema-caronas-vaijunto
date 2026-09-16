@@ -53,20 +53,52 @@ func (t *Trecho) Liberar() {
 // Trechos guarda ponteiros para os mesmos objetos usados no indice de busca,
 // assim os dois lugares sempre veem o estado atualizado.
 type Carona struct {
-	ID          int64 `json:"id"`
-	MotoristaID int64 `json:"motorista_id"`
-	Status string `json:"status"` // "ativa" ou "cancelada"
-	Trechos []*Trecho `json:"trechos"`
+	ID          int64  `json:"id"`
+	MotoristaID int64  `json:"motorista_id"`
+	Status      string `json:"status"`
+	Trechos     []*Trecho `json:"trechos"`
+
+	mu sync.Mutex `json:"-"`
 }
 
-// Reserva: bilhete do passageiro, um itinerário de um ou mais trechos
+func (c *Carona) Cancelar() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Status = "cancelada"
+}
+
+func (c *Carona) EstaAtiva() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Status == "ativa"
+}
+
+func (c *Carona) StatusAtual() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Status
+}
+
+
+
 type Reserva struct {
 	ID           int64 `json:"id"`
 	PassageiroID int64 `json:"passageiro_id"`
+	Itinerario   []int64 `json:"itinerario"`
+	Status       string `json:"status"`
+	CriadoEm     time.Time `json:"criado_em"`
 
-	Itinerario []int64 `json:"itinerario"` // IDs de Trecho, em ordem de viagem
+	mu sync.Mutex `json:"-"`
+}
 
-	Status string `json:"status"` // "confirmada", "cancelada"
+func (r *Reserva) Cancelar() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Status = "cancelada"
+}
 
-	CriadoEm time.Time `json:"criado_em"`
+func (r *Reserva) StatusAtual() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Status
 }

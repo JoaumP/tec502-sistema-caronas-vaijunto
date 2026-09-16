@@ -62,6 +62,21 @@ func (e *Estado) BuscarUsuario(login string) (*modelos.Usuario, bool) {
 	return u, existe
 }
 
+func (e *Estado) CriarUsuario(login, senhaHash string) (*modelos.Usuario, bool) {
+	e.usuariosMu.Lock()
+	defer e.usuariosMu.Unlock()
+	if _, existe := e.usuarios[login]; existe {
+		return nil, false
+	}
+	u := &modelos.Usuario{
+		ID:        atomic.AddInt64(&e.proximoIDUsuario, 1),
+		Login:     login,
+		SenhaHash: senhaHash,
+	}
+	e.usuarios[login] = u
+	return u, true
+}
+
 // Caronas
 
 func (e *Estado) SalvarCarona(c *modelos.Carona) {
@@ -154,4 +169,37 @@ func (e *Estado) BuscarReserva(id int64) (*modelos.Reserva, bool) {
 	defer e.reservasMu.RUnlock()
 	r, existe := e.reservas[id]
 	return r, existe
+}
+
+func (e *Estado) CancelarReservasDaCarona(carona *modelos.Carona) {
+	idsTrecho := make(map[int64]bool)
+	for _, t := range carona.Trechos {
+		idsTrecho[t.ID] = true
+	}
+
+	e.reservasMu.Lock()
+	var afetadas []*modelos.Reserva
+	for _, r := range e.reservas {
+		if r.Status != "confirmada" {
+			continue
+		}
+		for _, id := range r.Itinerario {
+			if idsTrecho[id] {
+				r.Cancelar()
+				afetadas = append(afetadas, r)
+				break
+			}
+		}
+	}
+	e.reservasMu.Unlock()
+
+	// libera TODOS os trechos de cada reserva afetada,
+	// mesmo os que pertencem a outros motoristas
+	for _, r := range afetadas {
+		for _, idTrecho := range r.Itinerario {
+			if t := e.BuscarTrecho(idTrecho); t != nil {
+				t.Liberar()
+			}
+		}
+	}
 }

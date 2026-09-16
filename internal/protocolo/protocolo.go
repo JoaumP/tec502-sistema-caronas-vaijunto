@@ -102,9 +102,11 @@ type TrechoDetalhado struct {
 	ID             int64   `json:"id"`
 	Origem         string  `json:"origem"`
 	Destino        string  `json:"destino"`
+	HorarioSaida   string  `json:"horario_saida"`
+	HorarioChegada string  `json:"horario_chegada"`
 	AssentosTotais int     `json:"assentos_totais"`
 	AssentosLivres int     `json:"assentos_livres"`
-	Passageiros    []int64 `json:"passageiros"` // IDs dos passageiros confirmados nesse trecho
+	Passageiros    []int64 `json:"passageiros"`
 }
 
 type RespostaConsultarCaronas struct {
@@ -112,9 +114,9 @@ type RespostaConsultarCaronas struct {
 }
 
 type ReservaDetalhada struct {
-	ID         int64   `json:"id"`
-	Itinerario []int64 `json:"itinerario"`
-	Status     string  `json:"status"`
+	ID      int64          `json:"id"`
+	Trechos []TrechoResumo `json:"trechos"`
+	Status  string         `json:"status"`
 }
 
 type RespostaConsultarReservas struct {
@@ -123,10 +125,22 @@ type RespostaConsultarReservas struct {
 
 // ItinerarioEncontrado: uma opção de viagem, com o preço já somado
 type ItinerarioEncontrado struct {
-	Trechos       []int64 `json:"trechos"` // IDs, na ordem da viagem
-	PrecoCentavos int     `json:"preco_centavos"`
+	Trechos       []TrechoResumo `json:"trechos"`
+	PrecoCentavos int            `json:"preco_centavos"`
 }
 
 type RespostaConfirmarReserva struct {
 	IDReserva int64 `json:"id_reserva"`
 }
+
+
+// TrechoResumo: dados de um trecho para exibição (busca, reserva, consulta)
+type TrechoResumo struct {
+	ID             int64  `json:"id"`
+	Origem         string `json:"origem"`
+	Destino        string `json:"destino"`
+	HorarioSaida   string `json:"horario_saida"`
+	HorarioChegada string `json:"horario_chegada"`
+	PrecoCentavos  int    `json:"preco_centavos"`
+}
+
