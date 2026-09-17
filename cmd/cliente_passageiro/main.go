@@ -14,7 +14,13 @@ import (
 
 
 func main() {
-	conexao, err := net.Dial("tcp", "localhost:8080")
+
+	endereco := os.Getenv("SERVIDOR")
+	if endereco == "" {
+		endereco = "localhost:8080"
+	}
+	conexao, err := net.Dial("tcp", endereco)
+
 	if err != nil {
 		fmt.Println("erro ao conectar:", err)
 		return
@@ -57,6 +63,7 @@ func menuPrincipal(leitor *bufio.Reader, escritor *bufio.Writer, entrada *bufio.
 		case "4":
 			cancelarReserva(leitor, escritor, entrada)
 		case "5":
+			auxiliares.EnviarEReceber(leitor, escritor, protocolo.Mensagem{Operacao: protocolo.OpLogout})
 			return
 		default:
 			fmt.Println("opção inválida")

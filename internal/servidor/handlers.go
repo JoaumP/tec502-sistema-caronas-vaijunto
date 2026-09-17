@@ -132,6 +132,10 @@ func (e *Estado) HandleBuscarItinerario(payload json.RawMessage) protocolo.Respo
 		})
 	}
 
+	sort.Slice(itinerarios, func(i, j int) bool {
+		return itinerarios[i].PrecoCentavos < itinerarios[j].PrecoCentavos
+	})
+
 	dados, _ := json.Marshal(protocolo.RespostaBuscarItinerario{Itinerarios: itinerarios})
 	return protocolo.Resposta{Sucesso: true, Dados: dados}
 }
@@ -198,6 +202,14 @@ func (e *Estado) HandleConfirmarReserva(idPassageiro int64, payload json.RawMess
 
 	if len(pedido.Itinerario) == 0 {
 		return respostaErro("itinerário vazio")
+	}
+
+	vistos := make(map[int64]bool)
+	for _, id := range pedido.Itinerario {
+		if vistos[id] {
+			return respostaErro("itinerário contém trechos repetidos")
+		}
+		vistos[id] = true
 	}
 
 	// busca os trechos reais a partir dos IDs

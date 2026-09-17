@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"os"
 
 	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/protocolo"
 	"github.com/JoaumP/tec502-sistema-caronas-vaijunto/internal/servidor"
@@ -14,7 +15,12 @@ import (
 func main() {
 	estado := servidor.NovoEstado()
 
-	listener, err := net.Listen("tcp", ":8080")
+	porta := os.Getenv("PORTA")
+	if porta == "" {
+		porta = "8080"
+	}
+	listener, err := net.Listen("tcp", ":"+porta)
+
 	if err != nil {
 		log.Fatal("erro ao abrir porta:", err)
 	}
@@ -69,6 +75,9 @@ func atenderConexao(conexao net.Conn, estado *servidor.Estado) {
 				json.Unmarshal(resposta.Dados, &r)
 				idUsuarioLogado = r.IDUsuario
 			}
+		case protocolo.OpLogout:
+			idUsuarioLogado = 0
+			resposta = protocolo.Resposta{Sucesso: true}
 		case protocolo.OpPublicarCarona:
 			resposta = estado.HandlePublicarCarona(idUsuarioLogado, msg.Payload)
 		case protocolo.OpBuscarItinerario:

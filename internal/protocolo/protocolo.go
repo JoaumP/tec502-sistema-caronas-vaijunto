@@ -21,6 +21,7 @@ type Resposta struct {
 const (
 	OpCadastro          = "cadastro"
 	OpLogin             = "login"
+	OpLogout 			= "logout"
 	OpPublicarCarona    = "publicar_carona"
 	OpCancelarCarona    = "cancelar_carona"
 	OpConsultarCaronas  = "consultar_caronas"
