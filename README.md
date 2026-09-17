@@ -91,6 +91,9 @@ docker run -it -e SERVIDOR=<IP_DO_SERVIDOR>:8080 vaijunto-motorista
 docker run -it -e SERVIDOR=<IP_DO_SERVIDOR>:8080 vaijunto-passageiro
 ```
 
+Para testar tudo na mesma máquina , use
+`--network host` em vez de `-p`/IP, com `SERVIDOR=localhost:8080`.
+
 ## Testes
 
 O diretório `cmd/teste_carga` contém uma suíte automatizada que sobe múltiplos
